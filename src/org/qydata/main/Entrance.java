@@ -3,12 +3,10 @@ package org.qydata.main;
 import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.apache.ibatis.session.SqlSessionFactoryBuilder;
-import org.qydata.po.ApiCost;
-import org.qydata.tools.CalendarAssistTool;
+import org.qydata.po.ApiBan;
+import org.qydata.tools.SendEmail;
 
 import java.io.InputStream;
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -18,49 +16,90 @@ import java.util.Map;
  */
 public class Entrance {
 
-    public static void main(String[] args) {
+    private static String [] to  = {"ld@qianyandata.com","it@qianyandata.com","zhangjianhong@qianyandata.com"};
+    //private static String [] to  = {"zhangjianhong@qianyandata.com"};
 
-        String resource = "mybatis.xml";
-        InputStream is = Entrance.class.getClassLoader().getResourceAsStream(resource);
+    public static SqlSession masterSqlSession(){
+        //String resource_master = "mybatis_master_test.xml";
+        String resource_master = "mybatis_master.xml";
+        InputStream is = Entrance.class.getClassLoader().getResourceAsStream(resource_master);
         SqlSessionFactory sessionFactory = new SqlSessionFactoryBuilder().build(is);
         SqlSession session = sessionFactory.openSession();
-        try {
-            SimpleDateFormat sdf = new SimpleDateFormat("yyyy/MM/dd");
-            Map<String,Object> mapDelete = new HashMap<>();
-            mapDelete.put("years", CalendarAssistTool.getCurrentYear());
-            mapDelete.put("months",CalendarAssistTool.getCurrentMonth());
-            mapDelete.put("days",CalendarAssistTool.getCurrentDay());
-            String statementDelete = "org.qydata.mapper.ApiCostMapper.deleteApiConsume";
-            int flag = session.delete(statementDelete,mapDelete);
-            session.commit();
-            String statementSelect = "org.qydata.mapper.ApiCostMapper.queryApiConsume";
-            Map<String, Object> mapSelect = new HashMap<>();
-            List<ApiCost> apiCostList = session.selectList(statementSelect, mapSelect);
-            List<ApiCost> apiCosts = new ArrayList<>();
-            if (apiCostList != null && apiCostList.size() >0){
-                for (int i = 0; i < apiCostList.size(); i++) {
-                    ApiCost apiCostResult = apiCostList.get(i);
-                    ApiCost apiCost = new ApiCost();
-                    apiCost.setApiId(apiCostResult.getApiId());
-                    apiCost.setYears(apiCostResult.getYears());
-                    apiCost.setMonths(apiCostResult.getMonths());
-                    apiCost.setDays(apiCostResult.getDays());
-                    apiCost.setTotleCost(apiCostResult.getTotleCost());
-                    apiCost.setUsageAmount(apiCostResult.getUsageAmount());
-                    apiCost.setFeeAmount(apiCostResult.getFeeAmount());
-                    apiCost.setConsuTime(sdf.parse(apiCostResult.getYears()+"/"+apiCostResult.getMonths()+"/"+apiCostResult.getDays()));
-                    apiCosts.add(apiCost);
-                }
-                //执行增加操作
-                String statementInsert = "org.qydata.mapper.ApiCostMapper.insertApiConsume";
-                int result = session.insert(statementInsert, apiCosts);
-                //增删改操作一定要提交事务
-                session.commit();
-            }
-        }catch (Exception e){
-            e.printStackTrace();
-        }finally{
-            session.close();
-        }
+        return session;
     }
+
+    public static SqlSession slaveSqlSession(){
+        //String resource_slave = "mybatis_slave_test.xml";
+        String resource_slave = "mybatis_slave.xml";
+        InputStream is = Entrance.class.getClassLoader().getResourceAsStream(resource_slave);
+        SqlSessionFactory sessionFactory = new SqlSessionFactoryBuilder().build(is);
+        SqlSession session = sessionFactory.openSession();
+        return session;
+    }
+
+    public static void main(String[] args) {
+
+        List<ApiBan> apiBanList = queryAllApiBan();
+        if (apiBanList != null && apiBanList.size() > 0){
+            for (int i = 0; i < apiBanList.size() ; i++) {
+                ApiBan apiBan = apiBanList.get(i);
+                String product = "";
+                String ts = "";
+                if (apiBan != null){
+                    if (apiBan.getPartnerId() != null){
+                        product =  apiBan.getTypeName() + "@" + apiBan.getVendorName() + "-" + apiBan.getPartnerName() ;
+                    }else {
+                        product = apiBan.getTypeName() + "@" + apiBan.getVendorName();
+                    }
+                    if (apiBan.getTs() != null){
+                        ts = apiBan.getTs();
+                    }
+                    String title = product + "恢复提醒";
+                    String content = product +"已恢复，恢复时间：" +ts;
+                    try {
+                        SendEmail.sendMail(to,title,content);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                    updateApiMonitorRecover(apiBan.getApiId());
+                    updateApiMonitor(apiBan.getApiId());
+
+                }
+            }
+        }
+
+    }
+
+
+    public static List<ApiBan> queryAllApiBan(){
+        SqlSession session = slaveSqlSession();
+        String queryAllApiBan = "org.qydata.mapper.ApiBanMapper.queryAllApiBan";
+        List<ApiBan> apiBanList = session.selectList(queryAllApiBan);
+        session.close();
+        return apiBanList;
+    }
+
+    public static void updateApiMonitorRecover(Integer apiId){
+        SqlSession session = masterSqlSession();
+        String updateApiMonitorRecover = "org.qydata.mapper.ApiBanMapper.updateApiMonitorRecover";
+        Map<String, Object> param = new HashMap<>();
+        param.put("apiId", apiId);
+        param.put("recoverFlag", 0);
+        param.put("sendFlag", 1);
+        session.update(updateApiMonitorRecover,param);
+        session.commit();
+        session.close();
+    }
+
+    public static void updateApiMonitor(Integer apiId){
+        SqlSession session = masterSqlSession();
+        String updateApiMonitor = "org.qydata.mapper.ApiBanMapper.updateApiMonitor";
+        Map<String, Object> updateParam = new HashMap<>();
+        updateParam.put("apiId", apiId);
+        updateParam.put("lastFc", 0);
+        session.update(updateApiMonitor, updateParam);
+        session.commit();
+        session.close();
+    }
+
 }

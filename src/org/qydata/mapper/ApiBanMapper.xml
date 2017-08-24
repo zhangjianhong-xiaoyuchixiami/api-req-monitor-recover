@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="org.qydata.mapper.ApiBanMapper">
+
+
+    <resultMap id="ApiBan_Map" type="org.qydata.po.ApiBan">
+        <result column="apiId" property="apiId"/>
+        <result column="apiTypeId" property="apiTypeId"/>
+        <result column="vendorId" property="vendorId"/>
+        <result column="typeName" property="typeName"/>
+        <result column="vendorName" property="vendorName"/>
+        <result column="partnerName" property="partnerName"/>
+        <result column="ts" property="ts"/>
+    </resultMap>
+
+    <select id="queryAllApiBan" resultMap="ApiBan_Map">
+        SELECT a.apiId,a.ts,a.apiTypeId,a.vendorId,b.name typeName,c.name vendorName,d.name partnerName
+        FROM
+        (
+            SELECT a.apiId,a.ts,b.apiTypeId,b.vendorId
+            FROM
+            (
+                SELECT a.apiId,b.ts
+                FROM qyfinance.ApiMonitorRecover a
+                LEFT JOIN qydata.ApiBan b ON a.apiId = b.apiId
+                LEFT JOIN qydata.Api c ON a.apiId = c.id
+                WHERE a.sendFlag = 0
+                AND b.fc = 0
+                AND c.status = 0
+            ) a
+            LEFT JOIN qyfinance.bkvwApi b ON a.apiId = b.id
+        ) a
+        LEFT JOIN qyfinance.bkvwApiType b ON a.apiTypeId = b.id
+        LEFT JOIN qyfinance.finance_ApiVendor c ON a.vendorId = c.id
+        LEFT JOIN qyfinance.bkvwPartner d ON c.partnerId = d.id
+    </select>
+
+    <update id="updateApiMonitorRecover" parameterType="map">
+        UPDATE qyfinance.ApiMonitorRecover
+        SET recoverFlag = #{recoverFlag},sendFlag = #{sendFlag}
+        WHERE apiId = #{apiId}
+    </update>
+
+    <update id="updateApiMonitor" parameterType="map">
+        UPDATE qyfinance.ApiMonitor SET lastFc = #{lastFc}
+        WHERE apiId = #{apiId}
+    </update>
+
+</mapper>
